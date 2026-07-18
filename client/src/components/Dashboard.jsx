@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { socket } from "../services/socket";
 import ConnectionStatus from "./ConnectionStatus";
 import MetricCard from "./MetricCard";
@@ -20,8 +20,13 @@ function Dashboard() {
   const [historyError, setHistoryError] = useState(null);
   const [insight, setInsight] = useState(null);
 
-  useEffect(() => {
-    fetchEventHistory(HISTORY_LIMIT)
+  const hasDisconnectedOnce = useRef(false);
+
+  // Shared so it can run on mount AND again after a reconnect, to backfill
+  // any anomalies that were persisted server-side while we were offline.
+  const loadHistory = useCallback(() => {
+    setHistoryLoading(true);
+    return fetchEventHistory(HISTORY_LIMIT)
       .then((history) => {
         setEvents(
           history.map((doc) => ({
@@ -32,6 +37,7 @@ function Dashboard() {
             reason: doc.reason,
           }))
         );
+        setHistoryError(null);
       })
       .catch((err) => {
         console.error("[history] failed to load persisted events:", err.message);
@@ -41,38 +47,65 @@ function Dashboard() {
   }, []);
 
   useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
+
+  useEffect(() => {
     if (socket.connected) {
       setStatus("connected: " + socket.id);
     }
 
     function onConnect() {
       setStatus("connected: " + socket.id);
+
+      // Only backfill on a genuine reconnect, not the initial mount-time
+      // connect (loadHistory already ran for that case above).
+      if (hasDisconnectedOnce.current) {
+        // Mark a visible gap in the charts so the outage isn't rendered as
+        // a smooth, misleading line across the dead time.
+        setChartData((prev) => [
+          ...prev,
+          { time: new Date().toLocaleTimeString(), heartRate: null, spo2: null, accelMag: null },
+        ]);
+        loadHistory();
+      }
     }
     function onDisconnect() {
       setStatus("disconnected");
+      hasDisconnectedOnce.current = true;
     }
+    // Handlers below receive payloads straight off the wire — a malformed
+    // or unexpected message shouldn't crash the whole live view mid-demo.
     function onSensorData(reading) {
-      setLatest(reading);
-      setChartData((prev) => {
-        const next = [
-          ...prev,
-          {
-            time: new Date(reading.timestamp).toLocaleTimeString(),
-            heartRate: reading.heartRate,
-            spo2: reading.spo2,
-            accelMag: reading.accelMag,
-          },
-        ];
-        return next.length > CHART_WINDOW ? next.slice(next.length - CHART_WINDOW) : next;
-      });
+      try {
+        setLatest(reading);
+        setChartData((prev) => {
+          const next = [
+            ...prev,
+            {
+              time: new Date(reading.timestamp).toLocaleTimeString(),
+              heartRate: reading.heartRate,
+              spo2: reading.spo2,
+              accelMag: reading.accelMag,
+            },
+          ];
+          return next.length > CHART_WINDOW ? next.slice(next.length - CHART_WINDOW) : next;
+        });
+      } catch (err) {
+        console.error("[socket] malformed sensor:data payload:", err, reading);
+      }
     }
     function onAnomalyDetected(payload) {
-      setLastAnomaly(payload);
-      setEvents((prev) => {
-        const next = [{ ...payload, id: `${payload.timestamp}-${Math.random()}` }, ...prev];
-        return next.length > HISTORY_LIMIT ? next.slice(0, HISTORY_LIMIT) : next;
-      });
-      setInsight({ id: payload.insightId, text: "", status: "streaming" });
+      try {
+        setLastAnomaly(payload);
+        setEvents((prev) => {
+          const next = [{ ...payload, id: `${payload.timestamp}-${Math.random()}` }, ...prev];
+          return next.length > HISTORY_LIMIT ? next.slice(0, HISTORY_LIMIT) : next;
+        });
+        setInsight({ id: payload.insightId, text: "", status: "streaming" });
+      } catch (err) {
+        console.error("[socket] malformed anomaly:detected payload:", err, payload);
+      }
     }
     function onAiChunk({ insightId, chunk }) {
       setInsight((prev) => (prev && prev.id === insightId ? { ...prev, text: prev.text + chunk } : prev));
@@ -101,7 +134,7 @@ function Dashboard() {
       socket.off("ai:done", onAiDone);
       socket.off("ai:error", onAiError);
     };
-  }, []);
+  }, [loadHistory]);
 
   const anomalyIsFresh = lastAnomaly && Date.now() - lastAnomaly.timestamp < 5000;
   const anomalyReason = anomalyIsFresh ? lastAnomaly.reason : "";

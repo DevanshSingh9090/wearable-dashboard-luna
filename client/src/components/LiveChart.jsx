@@ -20,6 +20,7 @@ function LiveChart({ title, data, dataKey, color, unit, domain }) {
             stroke={color}
             strokeWidth={2}
             dot={false}
+            connectNulls={false}
             isAnimationActive={true}
             animationDuration={300}
           />

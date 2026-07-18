@@ -26,7 +26,7 @@ function HistoryTable({ events, loading = false, error = null }) {
             </thead>
             <tbody>
               {events.map((event) => (
-                <tr key={event.id}>
+                <tr key={event.id} className={`severity-row severity-row--${event.severity}`}>
                   <td data-label="Time">{formatTime(event.timestamp)}</td>
                   <td data-label="Severity">
                     <span className={`severity-badge severity-badge--${event.severity}`}>{event.severity}</span>
