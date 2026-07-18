@@ -1,4 +1,5 @@
 const { createGenerator } = require("../simulator/generator");
+const detector = require("../anomaly/detector");
 
 const TICK_MS = 1000;
 
@@ -22,6 +23,19 @@ function socketHandler(io) {
   setInterval(() => {
     const reading = nextReading();
     io.emit("sensor:data", reading);
+
+    const result = detector.detect(reading);
+    if (result.anomaly) {
+      io.emit("anomaly:detected", {
+        ...result,
+        reading,
+        timestamp: reading.timestamp,
+      });
+      console.log(
+        `[anomaly] ${result.severity} (confidence ${result.confidence.toFixed(2)}) - ${result.reason}`
+      );
+    }
+
     if (reading.injectedAnomaly) {
       console.log(`[simulator] injected ${reading.injectedAnomaly}`, reading);
     }
