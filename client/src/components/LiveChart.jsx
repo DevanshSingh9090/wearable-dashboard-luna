@@ -1,8 +1,5 @@
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
-// Renders a rolling line chart for one metric. `data` is expected to already
-// be windowed (see Dashboard.jsx) — this component just draws whatever it's
-// given, it doesn't trim history itself.
 function LiveChart({ title, data, dataKey, color, unit, domain }) {
   return (
     <div className="live-chart">

@@ -1,6 +1,3 @@
-// Live alert feed. In-memory only for now (capped list, newest first) —
-// Phase 7 will swap this to fetch persisted history from MongoDB on load
-// and keep appending new anomaly:detected events on top of it.
 function formatTime(ts) {
   return new Date(ts).toLocaleTimeString();
 }

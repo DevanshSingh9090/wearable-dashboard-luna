@@ -4,18 +4,24 @@ import ConnectionStatus from "./ConnectionStatus";
 import MetricCard from "./MetricCard";
 import LiveChart from "./LiveChart";
 import HistoryTable from "./HistoryTable";
+import AIInsight from "./AIInsight";
 
-const CHART_WINDOW = 60; // keep last 60 ticks (~1 min at 1 reading/sec)
-const HISTORY_LIMIT = 50; // cap in-memory alert feed until Phase 7 adds Mongo
+const CHART_WINDOW = 60;
+const HISTORY_LIMIT = 50;
 
 function Dashboard() {
   const [status, setStatus] = useState("connecting...");
   const [chartData, setChartData] = useState([]);
   const [latest, setLatest] = useState(null);
-  const [lastAnomaly, setLastAnomaly] = useState(null); // used to flash the matching MetricCard
+  const [lastAnomaly, setLastAnomaly] = useState(null);
   const [events, setEvents] = useState([]);
+  const [insight, setInsight] = useState(null);
 
   useEffect(() => {
+    if (socket.connected) {
+      setStatus("connected: " + socket.id);
+    }
+
     function onConnect() {
       setStatus("connected: " + socket.id);
     }
@@ -43,24 +49,37 @@ function Dashboard() {
         const next = [{ ...payload, id: `${payload.timestamp}-${Math.random()}` }, ...prev];
         return next.length > HISTORY_LIMIT ? next.slice(0, HISTORY_LIMIT) : next;
       });
+      setInsight({ id: payload.insightId, text: "", status: "streaming" });
+    }
+    function onAiChunk({ insightId, chunk }) {
+      setInsight((prev) => (prev && prev.id === insightId ? { ...prev, text: prev.text + chunk } : prev));
+    }
+    function onAiDone({ insightId }) {
+      setInsight((prev) => (prev && prev.id === insightId ? { ...prev, status: "done" } : prev));
+    }
+    function onAiError({ insightId, message }) {
+      setInsight((prev) => (prev && prev.id === insightId ? { ...prev, status: "error", error: message } : prev));
     }
 
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
     socket.on("sensor:data", onSensorData);
     socket.on("anomaly:detected", onAnomalyDetected);
+    socket.on("ai:chunk", onAiChunk);
+    socket.on("ai:done", onAiDone);
+    socket.on("ai:error", onAiError);
 
     return () => {
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);
       socket.off("sensor:data", onSensorData);
       socket.off("anomaly:detected", onAnomalyDetected);
+      socket.off("ai:chunk", onAiChunk);
+      socket.off("ai:done", onAiDone);
+      socket.off("ai:error", onAiError);
     };
   }, []);
 
-  // Determine which metric (if any) the most recent anomaly hit, so its
-  // card can highlight. Only treat it as "current" for a short window so
-  // an old anomaly doesn't leave a card stuck red forever.
   const anomalyIsFresh = lastAnomaly && Date.now() - lastAnomaly.timestamp < 5000;
   const anomalyReason = anomalyIsFresh ? lastAnomaly.reason : "";
   const hrSeverity = anomalyIsFresh && anomalyReason.includes("Heart rate") ? lastAnomaly.severity : "none";
@@ -87,6 +106,10 @@ function Dashboard() {
         <LiveChart title="Heart Rate" data={chartData} dataKey="heartRate" color="#ff6584" unit="bpm" />
         <LiveChart title="SpO2" data={chartData} dataKey="spo2" color="#4dd0e1" unit="%" domain={[80, 100]} />
         <LiveChart title="Accel Magnitude" data={chartData} dataKey="accelMag" color="#ffb74d" unit="g" />
+      </section>
+
+      <section className="dashboard__insight">
+        <AIInsight insight={insight} />
       </section>
 
       <section className="dashboard__history">

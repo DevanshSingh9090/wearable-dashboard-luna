@@ -1,6 +1,3 @@
-// Displays the latest value for a single metric. Turns amber/red when the
-// most recent anomaly hit this same metric, so the card itself doubles as
-// a passive alert indicator without needing extra wiring.
 function MetricCard({ label, value, unit, severity }) {
   const cardClass =
     severity === "high"

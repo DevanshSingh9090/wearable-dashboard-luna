@@ -1,5 +1,6 @@
 const { createGenerator } = require("../simulator/generator");
 const detector = require("../anomaly/detector");
+const geminiService = require("../services/geminiService");
 
 const TICK_MS = 1000;
 
@@ -15,10 +16,6 @@ function socketHandler(io) {
     });
   });
 
-  // Single global simulation loop, broadcast to every connected client via
-  // io.emit (not socket.emit inside the connection handler). One shared
-  // interval — not one per connection — is what keeps concurrent clients in
-  // sync and avoids duplicate/drifting timers per the brief's requirement.
   const nextReading = createGenerator("normal");
   setInterval(() => {
     const reading = nextReading();
@@ -26,13 +23,26 @@ function socketHandler(io) {
 
     const result = detector.detect(reading);
     if (result.anomaly) {
+      const insightId = `${reading.timestamp}-${Math.random().toString(36).slice(2, 8)}`;
+
       io.emit("anomaly:detected", {
         ...result,
         reading,
         timestamp: reading.timestamp,
+        insightId,
       });
       console.log(
         `[anomaly] ${result.severity} (confidence ${result.confidence.toFixed(2)}) - ${result.reason}`
+      );
+
+      geminiService.streamInsight(
+        { reading, severity: result.severity, confidence: result.confidence, reason: result.reason },
+        (chunk) => io.emit("ai:chunk", { insightId, chunk }),
+        (fullText) => io.emit("ai:done", { insightId, fullText }),
+        (err) => {
+          console.error("[gemini] streaming error:", err.message);
+          io.emit("ai:error", { insightId, message: err.message });
+        }
       );
     }
 
