@@ -16,6 +16,8 @@ function Dashboard() {
   const [latest, setLatest] = useState(null);
   const [lastAnomaly, setLastAnomaly] = useState(null);
   const [events, setEvents] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState(null);
   const [insight, setInsight] = useState(null);
 
   useEffect(() => {
@@ -31,7 +33,11 @@ function Dashboard() {
           }))
         );
       })
-      .catch((err) => console.error("[history] failed to load persisted events:", err.message));
+      .catch((err) => {
+        console.error("[history] failed to load persisted events:", err.message);
+        setHistoryError("Couldn't load past alerts — showing live data only.");
+      })
+      .finally(() => setHistoryLoading(false));
   }, []);
 
   useEffect(() => {
@@ -113,6 +119,12 @@ function Dashboard() {
         <ConnectionStatus status={status} />
       </header>
 
+      {status === "disconnected" && (
+        <div className="banner banner--warning">
+          Lost connection to the server — trying to reconnect… Live updates are paused.
+        </div>
+      )}
+
       <section className="dashboard__cards">
         <MetricCard label="Heart Rate" value={latest?.heartRate} unit=" bpm" severity={hrSeverity} />
         <MetricCard label="SpO2" value={latest?.spo2} unit=" %" severity={spo2Severity} />
@@ -130,7 +142,7 @@ function Dashboard() {
       </section>
 
       <section className="dashboard__history">
-        <HistoryTable events={events} />
+        <HistoryTable events={events} loading={historyLoading} error={historyError} />
       </section>
     </div>
   );
