@@ -5,6 +5,7 @@ import MetricCard from "./MetricCard";
 import LiveChart from "./LiveChart";
 import HistoryTable from "./HistoryTable";
 import AIInsight from "./AIInsight";
+import { fetchEventHistory } from "../services/api";
 
 const CHART_WINDOW = 60;
 const HISTORY_LIMIT = 50;
@@ -16,6 +17,22 @@ function Dashboard() {
   const [lastAnomaly, setLastAnomaly] = useState(null);
   const [events, setEvents] = useState([]);
   const [insight, setInsight] = useState(null);
+
+  useEffect(() => {
+    fetchEventHistory(HISTORY_LIMIT)
+      .then((history) => {
+        setEvents(
+          history.map((doc) => ({
+            id: doc.insightId || doc._id,
+            timestamp: doc.timestamp,
+            severity: doc.severity,
+            confidence: doc.confidence,
+            reason: doc.reason,
+          }))
+        );
+      })
+      .catch((err) => console.error("[history] failed to load persisted events:", err.message));
+  }, []);
 
   useEffect(() => {
     if (socket.connected) {
